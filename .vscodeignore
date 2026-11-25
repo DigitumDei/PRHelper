@@ -4,6 +4,7 @@ dev/**
 out/test/**
 out/e2e/**
 .claude/**
+.github/**
 **/*.map
 .gitignore
 tsconfig.json
