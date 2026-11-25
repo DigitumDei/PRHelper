@@ -1,0 +1,413 @@
+:root {
+  --c-new: var(--vscode-gitDecoration-addedResourceForeground, #2e8b3d);
+  --c-modified: var(--vscode-gitDecoration-modifiedResourceForeground, #a8730a);
+  --c-removed: var(--vscode-gitDecoration-deletedResourceForeground, #c4313a);
+  --c-plain: var(--vscode-descriptionForeground, #7a7a7a);
+  --c-border: var(--vscode-widget-border, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)));
+  --c-card: var(--vscode-editorWidget-background, rgba(128, 128, 128, 0.08));
+  --c-hover: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.16));
+  --c-focus: var(--vscode-focusBorder, #0078d4);
+  --c-link: var(--vscode-textLink-foreground, #0a69c7);
+  --mono: var(--vscode-editor-font-family, Consolas, 'Courier New', monospace);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  color: var(--vscode-foreground, #333);
+  font-family: var(--vscode-font-family, 'Segoe UI', sans-serif);
+  font-size: var(--vscode-font-size, 13px);
+}
+
+#root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-width: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  background: var(--c-hover);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+button:focus-visible,
+[role='button']:focus-visible {
+  outline: 1px solid var(--c-focus);
+  outline-offset: 1px;
+}
+
+/* ---- top bar ---- */
+
+.bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--c-border);
+  flex: none;
+  min-width: 0;
+}
+
+.back {
+  flex: none;
+  border-color: var(--c-border);
+}
+
+.trail {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.crumb {
+  font-family: var(--mono);
+  color: var(--c-plain);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 1 auto;
+  min-width: 2ch;
+}
+
+.crumb.here {
+  color: inherit;
+  font-weight: 600;
+  padding: 2px 6px;
+  flex: 0 0 auto;
+}
+
+.sep {
+  color: var(--c-plain);
+  flex: none;
+}
+
+.status {
+  color: var(--c-plain);
+  font-style: italic;
+  flex: none;
+}
+
+.legend {
+  display: flex;
+  gap: 12px;
+  flex: none;
+  color: var(--c-plain);
+  font-size: 0.92em;
+}
+
+.key::before {
+  content: '';
+  display: inline-block;
+  width: 18px;
+  margin-right: 5px;
+  vertical-align: middle;
+  border-top: 2px solid var(--c-plain);
+}
+
+.k-new::before {
+  border-top-color: var(--c-new);
+}
+
+.k-modified::before {
+  border-top-color: var(--c-modified);
+}
+
+.k-removed::before {
+  border-top: 2px dashed var(--c-removed);
+}
+
+.source {
+  flex: none;
+  max-width: 28ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-color: var(--c-border);
+  color: var(--c-plain);
+}
+
+@media (max-width: 760px) {
+  .legend {
+    display: none;
+  }
+}
+
+/* ---- graph ---- */
+
+.scroll {
+  flex: 1 1 auto;
+  overflow: auto;
+  min-height: 0;
+}
+
+.busy .scroll {
+  opacity: 0.55;
+}
+
+.graph {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(170px, 1fr) minmax(190px, 0.9fr) minmax(170px, 1fr);
+  column-gap: 72px;
+  padding: 8px 14px 16px;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+svg.edges {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.edge {
+  fill: none;
+  stroke-width: 1.5;
+}
+
+.e-new {
+  stroke: var(--c-new);
+  fill: var(--c-new);
+}
+
+.e-modified {
+  stroke: var(--c-modified);
+  fill: var(--c-modified);
+}
+
+.e-removed {
+  stroke: var(--c-removed);
+  fill: var(--c-removed);
+}
+
+.e-unchanged {
+  stroke: var(--c-plain);
+  fill: var(--c-plain);
+  opacity: 0.55;
+}
+
+path.edge {
+  fill: none;
+}
+
+path.edge.e-removed {
+  stroke-dasharray: 5 4;
+}
+
+path.tip {
+  stroke: none;
+}
+
+.col {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.colhead {
+  color: var(--c-plain);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+}
+
+.col.centre .colhead {
+  text-align: center;
+}
+
+.card {
+  border: 1px solid var(--c-border);
+  border-left-width: 3px;
+  border-radius: 4px;
+  background: var(--c-card);
+  padding: 5px 9px 6px;
+  min-width: 0;
+}
+
+.card.clickable {
+  cursor: pointer;
+}
+
+.card.clickable:hover {
+  background: var(--c-hover);
+}
+
+.card.external {
+  opacity: 0.7;
+}
+
+/* The left stripe says whether this function is itself touched by the PR. */
+.card.node-new {
+  border-left-color: var(--c-new);
+}
+
+.card.node-modified {
+  border-left-color: var(--c-modified);
+}
+
+.card.edge-removed {
+  border-style: dashed;
+  border-left-style: dashed;
+}
+
+.card.focus {
+  position: sticky;
+  top: 8px;
+  border-color: var(--c-focus);
+  border-width: 1px;
+  border-left-width: 3px;
+  padding: 8px 10px;
+}
+
+/* Room under the centre card for the loop arrow of a function that calls itself. */
+.card.focus[data-loop] {
+  margin-bottom: 40px;
+}
+
+.self {
+  margin-top: 4px;
+  color: var(--c-plain);
+  font-size: 0.92em;
+}
+
+.loopmark {
+  stroke: none;
+  opacity: 1;
+  font-weight: 600;
+}
+
+.loopmark.e-new {
+  color: var(--c-new);
+}
+
+.loopmark.e-modified {
+  color: var(--c-modified);
+}
+
+.loopmark.e-removed {
+  color: var(--c-removed);
+}
+
+.name {
+  font-family: var(--mono);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.where,
+.sites,
+.state,
+.note {
+  color: var(--c-plain);
+  font-size: 0.92em;
+  overflow-wrap: anywhere;
+}
+
+.state {
+  margin-top: 4px;
+}
+
+.note {
+  margin-top: 6px;
+  font-style: italic;
+}
+
+.plus {
+  color: var(--c-new);
+}
+
+.minus {
+  color: var(--c-removed);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.badge {
+  font-size: 0.85em;
+  line-height: 1.5;
+  padding: 0 6px;
+  border-radius: 8px;
+  border: 1px solid currentColor;
+  white-space: nowrap;
+}
+
+.b-new,
+.b-node-new {
+  color: var(--c-new);
+}
+
+.b-modified,
+.b-node-modified {
+  color: var(--c-modified);
+}
+
+.b-removed {
+  color: var(--c-removed);
+}
+
+.b-node-new,
+.b-node-modified {
+  border-style: dotted;
+}
+
+.site {
+  color: var(--c-link);
+  cursor: pointer;
+}
+
+.site:hover {
+  text-decoration: underline;
+}
+
+.toggle {
+  align-self: flex-start;
+  color: var(--c-plain);
+  border-color: var(--c-border);
+}
+
+.empty,
+.more {
+  color: var(--c-plain);
+  font-style: italic;
+  padding: 4px 2px;
+}
+
+.hint {
+  margin: auto;
+  padding: 24px;
+  color: var(--c-plain);
+  text-align: center;
+}
