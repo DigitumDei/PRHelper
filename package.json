@@ -1,0 +1,139 @@
+{
+  "name": "pr-flow",
+  "displayName": "PR Flow",
+  "description": "See where a pull request's changes flow from and flow to, one method at a time.",
+  "version": "0.0.1",
+  "publisher": "local",
+  "private": true,
+  "license": "UNLICENSED",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [],
+  "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "prFlow",
+          "title": "PR Flow",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "prFlow": [
+        {
+          "id": "prFlow.changes",
+          "name": "Changed in this PR"
+        },
+        {
+          "type": "webview",
+          "id": "prFlow.flow",
+          "name": "Flow"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "prFlow.changes",
+        "contents": "No changes loaded yet.\n[Load pull request](command:prFlow.loadPullRequest)\n[Compare with a branch](command:prFlow.compareWithRef)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "prFlow.loadPullRequest",
+        "title": "Load Pull Request…",
+        "category": "PR Flow",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "prFlow.compareWithRef",
+        "title": "Compare with Branch or Ref…",
+        "category": "PR Flow",
+        "icon": "$(git-compare)"
+      },
+      {
+        "command": "prFlow.refresh",
+        "title": "Refresh",
+        "category": "PR Flow",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "prFlow.showFlowAtCursor",
+        "title": "Show Flow for Function at Cursor",
+        "category": "PR Flow"
+      },
+      {
+        "command": "prFlow.back",
+        "title": "Back to Previous Function",
+        "category": "PR Flow"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "prFlow.loadPullRequest",
+          "when": "view == prFlow.changes",
+          "group": "navigation@1"
+        },
+        {
+          "command": "prFlow.compareWithRef",
+          "when": "view == prFlow.changes",
+          "group": "navigation@2"
+        },
+        {
+          "command": "prFlow.refresh",
+          "when": "view == prFlow.changes",
+          "group": "navigation@3"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "prFlow.showFlowAtCursor",
+          "group": "navigation@99"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "PR Flow",
+      "properties": {
+        "prFlow.followCursor": {
+          "type": "boolean",
+          "default": true,
+          "description": "Re-centre the flow on whichever function the cursor is in."
+        },
+        "prFlow.detectPullRequest": {
+          "type": "boolean",
+          "default": true,
+          "description": "When a folder is opened, ask the gh CLI whether its branch has an open pull request and compare against that pull request's base."
+        },
+        "prFlow.worktreeDirectory": {
+          "type": "string",
+          "default": ".worktrees",
+          "description": "Where to create a worktree for a pull request, relative to the main checkout. Only used when the repository has no worktrees yet; otherwise new ones go beside the existing ones."
+        },
+        "prFlow.maxNodes": {
+          "type": "number",
+          "default": 40,
+          "minimum": 5,
+          "description": "Maximum callers and callees to draw on each side of the flow."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "tsc -p . && node --test \"out/test/**/*.test.js\"",
+    "e2e": "tsc -p . && node dev/run-e2e.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.5.0"
+  }
+}

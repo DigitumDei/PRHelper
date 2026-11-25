@@ -1,0 +1,9 @@
+.vscode/**
+src/**
+dev/**
+out/test/**
+out/e2e/**
+.claude/**
+**/*.map
+.gitignore
+tsconfig.json

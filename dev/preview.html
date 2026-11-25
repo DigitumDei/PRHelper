@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PR Flow panel preview</title>
+<!-- Development harness: renders the real panel code outside VS Code with sample data. Not shipped. -->
+<link href="../media/flow.css" rel="stylesheet">
+<style>
+  body { background: #ffffff; }
+  body.dark { background: #1f1f1f; color: #cccccc; --vscode-foreground: #cccccc; --vscode-descriptionForeground: #9d9d9d; --vscode-gitDecoration-addedResourceForeground: #81b88b; --vscode-gitDecoration-modifiedResourceForeground: #e2c08d; --vscode-gitDecoration-deletedResourceForeground: #f48771; --vscode-textLink-foreground: #4daafc; --vscode-editorWidget-background: #252526; }
+  #log { position: fixed; right: 8px; bottom: 8px; font: 12px Consolas, monospace; color: #888; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<div id="log"></div>
+<script>
+  if (location.search.includes('dark')) document.body.classList.add('dark');
+  const SAMPLE = {
+    type: 'flow',
+    source: 'PR #482 vs origin/main',
+    trail: ['createOrderHandler'],
+    trailOffset: 0,
+    model: {
+      focus: { name: 'OrderService.submitOrder', where: 'src/orders/submit.ts:14', change: 'modified', added: 3, removed: 2 },
+      callers: [
+        { id: 'in0', name: 'checkoutV2', where: 'src/api/checkout.ts:31', edge: 'new', node: 'new', external: false, clickable: true, sites: [{ id: 'in0s0', line: 44 }] },
+        { id: 'in1', name: 'retryFailedOrders', where: 'src/jobs/retry.ts:9', edge: 'unchanged', node: 'modified', external: false, clickable: true, sites: [{ id: 'in1s0', line: 22 }] },
+        { id: 'in2', name: 'createOrderHandler', where: 'src/api/orders.ts:18', edge: 'unchanged', node: 'unchanged', external: false, clickable: true, sites: [{ id: 'in2s0', line: 27 }] },
+      ],
+      callees: [
+        { id: 'out0', name: 'reserveStock', where: 'src/inventory/stock.ts:40', edge: 'new', node: 'new', external: false, clickable: true, sites: [{ id: 'out0s0', line: 15 }] },
+        { id: 'out1', name: 'chargeCard', where: 'src/billing/charge.ts:12', edge: 'modified', node: 'unchanged', external: false, clickable: true, sites: [{ id: 'out1s0', line: 16 }] },
+        { id: 'out2', name: 'audit', where: 'src/audit/log.ts:5', edge: 'unchanged', node: 'unchanged', external: false, clickable: true, sites: [{ id: 'out2s0', line: 17 }, { id: 'out2s1', line: 21 }] },
+        { id: 'gone0', name: 'sendReceipt', where: 'src/email/receipt.ts:8', edge: 'removed', node: 'unchanged', external: false, clickable: true, sites: [] },
+        { id: 'out3', name: 'publish', where: 'src/queue/client.ts:33', edge: 'new', node: 'unchanged', external: false, clickable: true, sites: [{ id: 'out3s0', line: 18 }] },
+        { id: 'out4', name: 'stringify', where: 'lib.es5.d.ts', edge: 'unchanged', node: 'unchanged', external: true, clickable: true, sites: [{ id: 'out4s0', line: 18 }] },
+        { id: 'out5', name: 'now', where: 'lib.es5.d.ts', edge: 'unchanged', node: 'unchanged', external: true, clickable: true, sites: [{ id: 'out5s0', line: 19 }] },
+      ],
+      hiddenCallers: 0,
+      hiddenCallees: 0,
+    },
+  };
+  window.acquireVsCodeApi = () => ({
+    postMessage(message) {
+      document.getElementById('log').textContent = 'last message: ' + JSON.stringify(message);
+      if (message.type === 'ready') window.postMessage(SAMPLE, '*');
+    },
+  });
+</script>
+<script src="../media/flow.js"></script>
+</body>
+</html>
