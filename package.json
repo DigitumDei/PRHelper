@@ -5,7 +5,11 @@
   "version": "0.0.1",
   "publisher": "local",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/DigitumDei/PRHelper.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
