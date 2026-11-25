@@ -98,9 +98,24 @@ function fileOf(session: PrSession | undefined, uri: vscode.Uri): FileDiff | und
   return session && uri.scheme === 'file' ? session.fileForPath(uri.fsPath) : undefined;
 }
 
+/** Language servers can report one call twice on a line. One link per line is enough. */
+function onePerLine(ranges: readonly vscode.Range[]): vscode.Range[] {
+  const seen = new Set<number>();
+  return [...ranges]
+    .sort((a, b) => a.start.compareTo(b.start))
+    .filter((r) => (seen.has(r.start.line) ? false : (seen.add(r.start.line), true)));
+}
+
 function where(session: PrSession | undefined, uri: vscode.Uri, line0: number): string {
   if (uri.scheme !== 'file') {
     return path.posix.basename(uri.path);
+  }
+  if (isExternal(uri)) {
+    // Outside the project: the full path is long and says nothing. Name the package and file.
+    const full = uri.fsPath.replace(/\\/g, '/');
+    const marker = '/node_modules/';
+    const at = full.lastIndexOf(marker);
+    return `${at >= 0 ? full.slice(at + marker.length) : path.posix.basename(full)}:${line0 + 1}`;
   }
   const rel =
     session && session.contains(uri.fsPath) ? session.relative(uri.fsPath) : vscode.workspace.asRelativePath(uri, false);
@@ -215,7 +230,9 @@ export async function buildFlow(
     ...outgoing.filter((c) => isSelf(c.to)).flatMap((c) => c.fromRanges),
     ...incoming.filter((c) => isSelf(c.from)).flatMap((c) => c.fromRanges),
   ]) {
-    selfSites.set(`${r.start.line}:${r.start.character}`, r);
+    if (!selfSites.has(String(r.start.line))) {
+      selfSites.set(String(r.start.line), r);
+    }
   }
   outgoing = outgoing.filter((c) => !isSelf(c.to));
   incoming = incoming.filter((c) => !isSelf(c.from));
@@ -243,7 +260,7 @@ export async function buildFlow(
       focusAt: to.selectionRange.start,
       callable: callableOf(to),
     });
-    const sites = call.fromRanges.map((r, j) => {
+    const sites = onePerLine(call.fromRanges).map((r, j) => {
       const sid = `${id}s${j}`;
       targets.set(sid, { uri, reveal: r });
       return { id: sid, line: r.start.line + 1 };
@@ -252,7 +269,7 @@ export async function buildFlow(
     return {
       id,
       name: to.name,
-      where: external ? to.detail || where(session, to.uri, to.selectionRange.start.line) : where(session, to.uri, to.selectionRange.start.line),
+      where: where(session, to.uri, to.selectionRange.start.line),
       edge: classifyCallEdge(focusFile, lines, to.name, removedText),
       node: classifyRange(fileOf(session, to.uri), to.range.start.line + 1, to.range.end.line + 1).change,
       external,
@@ -313,7 +330,7 @@ export async function buildFlow(
     const first = call.fromRanges[0] ?? from.selectionRange;
     const fromCallable = callableOf(from);
     targets.set(id, { uri: from.uri, reveal: first, focusAt: from.selectionRange.start, callable: fromCallable });
-    const sites = call.fromRanges.map((r, j) => {
+    const sites = onePerLine(call.fromRanges).map((r, j) => {
       const sid = `${id}s${j}`;
       targets.set(sid, { uri: from.uri, reveal: r, focusAt: from.selectionRange.start, callable: fromCallable });
       return { id: sid, line: r.start.line + 1 };
