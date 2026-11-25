@@ -119,8 +119,26 @@ async function main(report: Record<string, unknown>): Promise<void> {
   await vscode.commands.executeCommand('prFlow.showFlowAtCursor');
   report.commands = 'ran';
 
-  // The click path, driven the way the panel drives it: every click must re-centre the flow.
   const api = (ext.exports as { __test: TestApi }).__test;
+
+  // Methods are nested symbols (children of their class). They must be found: listed under the
+  // file, usable as the centre from the cursor, and named with their class.
+  const apiFile = vscode.Uri.file(path.join(root, 'src', 'api.ts'));
+  report.changedFunctions = await api.changedFunctions('src/api.ts');
+  assert.deepEqual(report.changedFunctions, ['checkoutV2', 'handle', 'reset']);
+  const apiCallables = await documentCallables(apiFile);
+  const handle = apiCallables.find((c) => c.name === 'handle');
+  assert.equal(handle?.container, 'OrderApi');
+  // Line 15 (0-based) is `this.handled++;`, inside OrderApi.handle.
+  assert.equal(enclosingCallable(apiCallables, new vscode.Position(15, 6))?.name, 'handle');
+  const method = await buildFlow(session, apiFile, handle, 40);
+  report.method = { focus: method.vm.focus, callees: method.vm.callees.filter((c) => !c.external).map(brief) };
+  assert.equal(method.vm.focus.name, 'OrderApi.handle');
+  assert.equal(method.vm.focus.change, 'modified');
+  assert.equal(method.vm.callees.find((c) => c.name === 'checkoutV2')?.edge, 'new');
+  assert.equal(method.vm.callees.find((c) => c.name === 'createOrderHandler')?.edge, 'removed');
+
+  // The click path, driven the way the panel drives it: every click must re-centre the flow.
   const panel = () => api.lastPanelMessage() as PanelFlow;
   const focus = () => panel().model?.focus.name;
   const names = (side: 'callers' | 'callees') => panel().model.callers && panel().model[side].map((c) => c.name);

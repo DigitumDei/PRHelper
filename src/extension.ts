@@ -218,6 +218,8 @@ export interface TestApi {
   lastPanelMessage(): unknown;
   sessionLabel(): string | undefined;
   changedFiles(): string[];
+  /** What the "Changed in this PR" list shows under a file, e.g. `src/api.ts`. */
+  changedFunctions(relPath: string): Promise<string[]>;
   showLastCommit(): Promise<void>;
   click(id: string): Promise<void>;
   back(): Promise<void>;
@@ -789,6 +791,11 @@ class Controller implements vscode.Disposable {
       lastPanelMessage: () => this.flow.lastMessage,
       sessionLabel: () => this.session?.label,
       changedFiles: () => (this.session?.files ?? []).map((f) => `${f.status} ${f.newPath ?? f.oldPath}`),
+      changedFunctions: async (relPath) => {
+        const file = this.session?.files.find((f) => f.newPath === relPath);
+        const rows = file ? await this.tree.getChildren({ kind: 'file', file }) : [];
+        return rows.map((r) => (r.kind === 'symbol' ? r.callable.name : r.kind === 'info' ? `(${r.text})` : '?'));
+      },
       showLastCommit: () => this.showLastCommit(),
       click: (id) => this.onPanelEvent({ type: 'open', id }),
       back: () => this.onPanelEvent({ type: 'back' }),

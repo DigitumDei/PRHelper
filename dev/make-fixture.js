@@ -47,12 +47,27 @@ write('src/orders.ts', [
   '  return true;',
   '}',
 ]);
+// The class sits after the functions so their line numbers stay put. Its methods are nested
+// symbols (children of the class), which is how most real code is laid out.
 write('src/api.ts', [
   "import { submitOrder } from './orders';",
   "import { Cart } from './types';",
   '',
   'export async function createOrderHandler(cart: Cart, user: string) {',
   '  return submitOrder(cart, user);',
+  '}',
+  '',
+  'export class OrderApi {',
+  '  private handled = 0;',
+  '',
+  '  handle(cart: Cart, user: string) {',
+  '    this.handled++;',
+  '    return createOrderHandler(cart, user);',
+  '  }',
+  '',
+  '  count(): number {',
+  '    return this.handled;',
+  '  }',
   '}',
 ]);
 
@@ -97,6 +112,23 @@ write('src/api.ts', [
   'export async function checkoutV2(cart: Cart, user: string) {',
   '  const receipt = await submitOrder(cart, user);',
   '  return { receipt };',
+  '}',
+  '',
+  'export class OrderApi {',
+  '  private handled = 0;',
+  '',
+  '  handle(cart: Cart, user: string) {',
+  '    this.handled++;',
+  '    return checkoutV2(cart, user);',
+  '  }',
+  '',
+  '  count(): number {',
+  '    return this.handled;',
+  '  }',
+  '',
+  '  reset() {',
+  '    this.handled = 0;',
+  '  }',
   '}',
 ]);
 git('add', '-A');
