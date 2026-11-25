@@ -39,6 +39,8 @@ export interface FocusVM {
   change: NodeChange;
   added: number;
   removed: number;
+  /** Set when the function calls itself: drawn as a loop on the centre card. */
+  recursion?: { edge: EdgeChange; sites: SiteVM[] };
 }
 
 export interface FlowVM {
@@ -202,6 +204,34 @@ export async function buildFlow(
     ]);
   }
 
+  // ---- A function that calls itself is one thing looping, not its own caller and its own callee.
+  const isSelf = (other: vscode.CallHierarchyItem): boolean =>
+    other.uri.toString() === uri.toString() &&
+    (other.selectionRange.start.isEqual(target.selectionRange.start) ||
+      (bareName(other.name) === bareName(target.name) &&
+        other.range.union(other.selectionRange).contains(target.selectionRange.start)));
+  const selfSites = new Map<string, vscode.Range>();
+  for (const r of [
+    ...outgoing.filter((c) => isSelf(c.to)).flatMap((c) => c.fromRanges),
+    ...incoming.filter((c) => isSelf(c.from)).flatMap((c) => c.fromRanges),
+  ]) {
+    selfSites.set(`${r.start.line}:${r.start.character}`, r);
+  }
+  outgoing = outgoing.filter((c) => !isSelf(c.to));
+  incoming = incoming.filter((c) => !isSelf(c.from));
+  let recursion: FocusVM['recursion'];
+  if (selfSites.size > 0) {
+    const ranges = [...selfSites.values()].sort((a, b) => a.start.compareTo(b.start));
+    recursion = {
+      edge: classifyCallEdge(focusFile, ranges.map((r) => r.start.line + 1), target.name, removedText),
+      sites: ranges.map((r, j) => {
+        const sid = `self${j}`;
+        targets.set(sid, { uri, reveal: r });
+        return { id: sid, line: r.start.line + 1 };
+      }),
+    };
+  }
+
   // ---- Flows to: calls made by the focus function. Call sites live in the focus document.
   const calleeRows: Array<NodeVM & { order: number }> = outgoing.map((call, i) => {
     const id = `out${i}`;
@@ -319,6 +349,7 @@ export async function buildFlow(
         change: stats.change,
         added: stats.added,
         removed: stats.removed,
+        recursion,
       },
       callers: callers.kept,
       callees: callees.kept.map(strip),

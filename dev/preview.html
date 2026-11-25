@@ -23,7 +23,7 @@
     trail: ['createOrderHandler'],
     trailOffset: 0,
     model: {
-      focus: { name: 'OrderService.submitOrder', where: 'src/orders/submit.ts:14', change: 'modified', added: 3, removed: 2 },
+      focus: { name: 'OrderService.submitOrder', where: 'src/orders/submit.ts:14', change: 'modified', added: 3, removed: 2, recursion: location.search.includes('loop') ? { edge: 'new', sites: [{ id: 'self0', line: 19 }] } : undefined },
       callers: [
         { id: 'in0', name: 'checkoutV2', where: 'src/api/checkout.ts:31', edge: 'new', node: 'new', external: false, clickable: true, sites: [{ id: 'in0s0', line: 44 }] },
         { id: 'in1', name: 'retryFailedOrders', where: 'src/jobs/retry.ts:9', edge: 'unchanged', node: 'modified', external: false, clickable: true, sites: [{ id: 'in1s0', line: 22 }] },

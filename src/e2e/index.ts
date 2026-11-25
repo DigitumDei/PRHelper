@@ -84,6 +84,21 @@ async function main(report: Record<string, unknown>): Promise<void> {
   assert.equal(step.vm.focus.change, 'new');
   assert.equal(step.vm.callers.find((c) => c.name === 'submitOrder')?.edge, 'new');
 
+  // A function that calls itself: a loop on the centre, and not listed as its own caller or callee.
+  const inventory = vscode.Uri.file(path.join(root, 'src', 'inventory.ts'));
+  const rec = await flowFor(session, inventory, 'countItems');
+  report.recursion = {
+    loop: rec.vm.focus.recursion,
+    callers: rec.vm.callers.map(brief),
+    callees: rec.vm.callees.filter((c) => !c.external).map(brief),
+  };
+  assert.equal(rec.vm.focus.recursion?.edge, 'new');
+  assert.deepEqual(rec.vm.focus.recursion?.sites.map((s) => s.line), [6]);
+  assert.deepEqual(rec.vm.callers.map((c) => c.name), ['reserveStock']);
+  assert.equal(rec.vm.callees.some((c) => c.name === 'countItems'), false);
+  // A function that does not call itself has no loop.
+  assert.equal(vm.focus.recursion, undefined);
+
   // A step into untouched code is plain navigation: nothing marked.
   const plain = await flowFor(session, vscode.Uri.file(path.join(root, 'src', 'billing.ts')), 'chargeCard');
   report.plain = { focus: plain.vm.focus, callers: plain.vm.callers.map(brief) };

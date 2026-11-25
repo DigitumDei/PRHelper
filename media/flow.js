@@ -145,12 +145,25 @@
           ? 'Changed in this PR'
           : 'Not changed by this PR';
     const counts = f.change === 'unchanged' ? null : h('span', { class: 'counts' }, h('span', { class: 'plus' }, '+' + f.added), ' ', h('span', { class: 'minus' }, '−' + f.removed));
+    let self = null;
+    if (f.recursion) {
+      self = h('div', { class: 'self' }, h('span', { class: 'loopmark e-' + f.recursion.edge, 'aria-hidden': 'true' }, '↻'), ' Calls itself at line ');
+      f.recursion.sites.slice(0, MAX_SITES).forEach((s, i) => {
+        if (i) self.append(', ');
+        const link = h('span', { class: 'site', title: 'Go to this call' }, String(s.line));
+        activate(link, () => send({ type: 'open', id: s.id }));
+        self.append(link);
+      });
+      if (f.recursion.sites.length > MAX_SITES) self.append(' and ' + (f.recursion.sites.length - MAX_SITES) + ' more');
+      if (EDGE_LABEL[f.recursion.edge]) self.append(' ', h('span', { class: 'badge b-' + f.recursion.edge }, EDGE_LABEL[f.recursion.edge]));
+    }
     return h(
       'div',
-      { class: 'card focus node-' + f.change },
+      { class: 'card focus node-' + f.change, 'data-loop': f.recursion ? f.recursion.edge : undefined },
       h('div', { class: 'name' }, f.name),
       h('div', { class: 'where' }, f.where),
       h('div', { class: 'state' }, state, counts ? ' · ' : null, counts),
+      self,
       note ? h('div', { class: 'note' }, note) : null,
     );
   }
@@ -195,6 +208,18 @@
 
     const pad = Math.min(14, f.height / 2);
     const anchorY = (cy) => Math.max(f.top + pad, Math.min(f.bottom - pad, cy)) - g.top;
+
+    // A function that calls itself: a loop out of the bottom of the centre card and back in.
+    const loopKind = focus.getAttribute('data-loop');
+    if (loopKind) {
+      const cx = (f.left + f.right) / 2 - g.left;
+      const y = f.bottom - g.top;
+      const loop = document.createElementNS(SVG_NS, 'path');
+      loop.setAttribute('d', `M${cx + 24} ${y} C${cx + 24} ${y + 36}, ${cx - 24} ${y + 36}, ${cx - 24} ${y + 3}`);
+      loop.setAttribute('class', 'edge e-' + loopKind);
+      loop.setAttribute('marker-end', 'url(#arrow-' + loopKind + ')');
+      svg.append(loop);
+    }
 
     graph.querySelectorAll('.card[data-side]').forEach((el) => {
       const r = el.getBoundingClientRect();

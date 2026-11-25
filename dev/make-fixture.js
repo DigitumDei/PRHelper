@@ -61,7 +61,16 @@ git('add', '-A');
 git('commit', '-q', '-m', 'base');
 git('checkout', '-q', '-b', 'feature');
 
-write('src/inventory.ts', ['export async function reserveStock(items: string[]) {', '  return items.length;', '}']);
+// `countItems` calls itself, to check recursion is shown as a loop rather than a caller and a callee.
+write('src/inventory.ts', [
+  'export async function reserveStock(items: string[]) {',
+  '  return countItems(items);',
+  '}',
+  '',
+  'function countItems(items: string[]): number {',
+  '  return items.length === 0 ? 0 : 1 + countItems(items.slice(1));',
+  '}',
+]);
 write('src/orders.ts', [
   "import { audit } from './audit';",
   "import { chargeCard } from './billing';",
