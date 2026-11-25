@@ -23,8 +23,17 @@ write('tsconfig.json', ['{ "compilerOptions": { "target": "ES2022", "module": "c
 write('src/types.ts', ['export interface Cart {', '  items: string[];', '  total: number;', '}']);
 write('src/billing.ts', ['export async function chargeCard(user: string, total: number) {', '  return { user, total };', '}']);
 write('src/email.ts', ['export async function sendReceipt(user: string) {', '  return user;', '}']);
-write('src/audit.ts', ["import { Cart } from './types';", '', 'export function audit(cart: Cart) {', '  return cart.items.length;', '}']);
-write('src/queue.ts', ['export async function publish(topic: string, payload: unknown) {', '  return [topic, payload];', '}']);
+// `count` is a closure and `publish` a one-line arrow function: neither is in the file's symbol
+// list as a function, but both are real steps in the flow and must be clickable.
+write('src/audit.ts', [
+  "import { Cart } from './types';",
+  '',
+  'export function audit(cart: Cart) {',
+  '  const count = (items: string[]) => items.length;',
+  '  return count(cart.items);',
+  '}',
+]);
+write('src/queue.ts', ['export const publish = async (topic: string, payload: unknown) => [topic, payload];']);
 write('src/orders.ts', [
   "import { audit } from './audit';",
   "import { chargeCard } from './billing';",

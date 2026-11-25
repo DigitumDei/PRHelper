@@ -8,6 +8,7 @@ import * as assert from 'node:assert/strict';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { TestApi } from '../extension';
 import { FlowResult, NodeVM, buildFlow } from '../flow';
 import * as git from '../git';
 import { PrSession } from '../session';
@@ -101,8 +102,61 @@ async function main(report: Record<string, unknown>): Promise<void> {
   editor.selection = new vscode.Selection(8, 4, 8, 4);
   await vscode.commands.executeCommand('prFlow.refresh');
   await vscode.commands.executeCommand('prFlow.showFlowAtCursor');
-  await vscode.commands.executeCommand('prFlow.back');
   report.commands = 'ran';
+
+  // The click path, driven the way the panel drives it: every click must re-centre the flow.
+  const api = (ext.exports as { __test: TestApi }).__test;
+  const panel = () => api.lastPanelMessage() as PanelFlow;
+  const focus = () => panel().model?.focus.name;
+  const names = (side: 'callers' | 'callees') => panel().model.callers && panel().model[side].map((c) => c.name);
+  const click = async (side: 'callers' | 'callees', name: string) => {
+    const card = panel().model[side].find((c) => c.name === name);
+    assert.ok(card, `no "${name}" card under ${side} of ${focus()}; have: ${names(side)}`);
+    await api.click(card.id);
+  };
+  const walk: string[] = [];
+  report.walk = walk;
+  const expectFocus = (name: string, how: string) => {
+    walk.push(`${how} -> ${focus()}`);
+    assert.equal(focus(), name, `after ${how}`);
+  };
+
+  expectFocus('submitOrder', 'show flow at cursor');
+
+  // "Flows to", onto a one-line arrow function.
+  await click('callees', 'publish');
+  expectFocus('publish', 'click callee publish');
+  assert.ok(names('callers').includes('submitOrder'), 'publish should list submitOrder as a caller');
+  assert.deepEqual(panel().trail, ['submitOrder']);
+
+  await api.back();
+  expectFocus('submitOrder', 'back');
+  assert.deepEqual(panel().trail, []);
+
+  // "Flows to" twice, ending on a closure inside another function.
+  await click('callees', 'audit');
+  expectFocus('audit', 'click callee audit');
+  await click('callees', 'count');
+  expectFocus('count', 'click callee count');
+  assert.deepEqual(panel().trail, ['submitOrder', 'audit']);
+  // The cursor now sits inside `audit`. Following it must not pull the centre back out.
+  await sleep(900);
+  expectFocus('count', 'cursor-follow settles');
+
+  // "Flows from", back up the chain and out to another file.
+  await click('callers', 'audit');
+  expectFocus('audit', 'click caller audit');
+  await click('callers', 'submitOrder');
+  expectFocus('submitOrder', 'click caller submitOrder');
+  await click('callers', 'checkoutV2');
+  expectFocus('checkoutV2', 'click caller checkoutV2');
+  assert.ok(names('callees').includes('submitOrder'), 'checkoutV2 should list submitOrder as a callee');
+}
+
+interface PanelFlow {
+  type: string;
+  model: { focus: { name: string }; callers: NodeVM[]; callees: NodeVM[] };
+  trail: string[];
 }
 
 export async function run(): Promise<void> {

@@ -55,6 +55,25 @@ export interface NavTarget {
   uri: vscode.Uri;
   reveal: vscode.Range;
   focusAt?: vscode.Position;
+  /**
+   * The function to centre on, taken straight from the call hierarchy. Without it the function
+   * has to be found again in the file's symbol list, which leaves out things the call hierarchy
+   * does know about, such as one-line arrow functions and closures.
+   */
+  callable?: Callable;
+}
+
+function callableOf(item: vscode.CallHierarchyItem): Callable {
+  return {
+    name: item.name,
+    container: '',
+    kind: item.kind,
+    // For `const f = () => ...` TypeScript reports the arrow function as the range and `f` as the
+    // name, so the name can sit outside the range. Join them so the function owns its own name.
+    range: item.range.union(item.selectionRange),
+    selectionRange: item.selectionRange,
+    strict: true,
+  };
 }
 
 export interface FlowResult {
@@ -188,7 +207,12 @@ export async function buildFlow(
     const id = `out${i}`;
     const lines = call.fromRanges.map((r) => r.start.line + 1);
     const to = call.to;
-    targets.set(id, { uri: to.uri, reveal: to.selectionRange, focusAt: to.selectionRange.start });
+    targets.set(id, {
+      uri: to.uri,
+      reveal: to.selectionRange,
+      focusAt: to.selectionRange.start,
+      callable: callableOf(to),
+    });
     const sites = call.fromRanges.map((r, j) => {
       const sid = `${id}s${j}`;
       targets.set(sid, { uri, reveal: r });
@@ -257,10 +281,11 @@ export async function buildFlow(
     const fromRemoved = fromFile ? hunksTouching(fromFile, fromStart, fromEnd).flatMap((h) => h.removed) : [];
     // Land on the call itself: that is the line that explains why this caller matters.
     const first = call.fromRanges[0] ?? from.selectionRange;
-    targets.set(id, { uri: from.uri, reveal: first, focusAt: from.selectionRange.start });
+    const fromCallable = callableOf(from);
+    targets.set(id, { uri: from.uri, reveal: first, focusAt: from.selectionRange.start, callable: fromCallable });
     const sites = call.fromRanges.map((r, j) => {
       const sid = `${id}s${j}`;
-      targets.set(sid, { uri: from.uri, reveal: r, focusAt: from.selectionRange.start });
+      targets.set(sid, { uri: from.uri, reveal: r, focusAt: from.selectionRange.start, callable: fromCallable });
       return { id: sid, line: r.start.line + 1 };
     });
     return {

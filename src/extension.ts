@@ -155,6 +155,10 @@ class FlowView implements vscode.WebviewViewProvider {
     return !!this.view?.visible;
   }
 
+  get lastMessage(): unknown {
+    return this.last;
+  }
+
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     const media = vscode.Uri.joinPath(this.extensionUri, 'media');
@@ -205,6 +209,15 @@ interface FocusEntry {
   uri: vscode.Uri;
   position: vscode.Position;
   name: string;
+  /** The function itself, kept so Back and Refresh can return to it without looking it up again. */
+  callable: Callable;
+}
+
+/** Hooks for the end-to-end check, so it can drive the panel the way a click would. */
+export interface TestApi {
+  lastPanelMessage(): unknown;
+  click(id: string): Promise<void>;
+  back(): Promise<void>;
 }
 
 const MAX_TRAIL = 30;
@@ -213,7 +226,7 @@ class Controller implements vscode.Disposable {
   private session?: PrSession;
   private autoLoadTried = false;
   private current?: FocusEntry;
-  private inflightKey?: string;
+  private inflight?: { key: string; uri: vscode.Uri; range: vscode.Range };
   private trail: FocusEntry[] = [];
   private targets = new Map<string, NavTarget>();
   private seq = 0;
@@ -342,7 +355,11 @@ class Controller implements vscode.Disposable {
     this.status.show();
     this.tree.refresh();
     if (this.current) {
-      void this.focusOn(this.current.uri, this.current.position, { force: true, push: false });
+      void this.focusOn(this.current.uri, this.current.position, {
+        force: true,
+        push: false,
+        callable: this.current.callable,
+      });
     }
   }
 
@@ -526,6 +543,7 @@ class Controller implements vscode.Disposable {
       uri: node.uri,
       reveal: node.callable.selectionRange,
       focusAt: node.callable.selectionRange.start,
+      callable: node.callable,
     });
   }
 
@@ -542,7 +560,7 @@ class Controller implements vscode.Disposable {
     const position = e.selections[0].active;
     clearTimeout(this.cursorTimer);
     this.cursorTimer = setTimeout(() => {
-      void this.guard(() => this.focusOn(doc.uri, position, { force: false, push: true }));
+      void this.guard(() => this.focusOn(doc.uri, position, { force: false, push: true, fromCursor: true }));
     }, 250);
   }
 
@@ -566,28 +584,60 @@ class Controller implements vscode.Disposable {
   private async goTo(target: NavTarget, push = true): Promise<void> {
     await this.reveal(target.uri, target.reveal);
     if (target.focusAt) {
-      await this.focusOn(target.uri, target.focusAt, { force: false, push });
+      await this.focusOn(target.uri, target.focusAt, { force: false, push, callable: target.callable });
     }
   }
 
-  /** Centre the flow on the function around `position`. */
+  /**
+   * Centre the flow on a function.
+   *
+   * With `callable` (a click on a card, Back, Refresh) that exact function becomes the centre.
+   * Without it (the cursor moved) the centre is the innermost function around `position`.
+   */
   private async focusOn(
     uri: vscode.Uri,
     position: vscode.Position,
-    opts: { force: boolean; push: boolean },
+    opts: { force: boolean; push: boolean; callable?: Callable; fromCursor?: boolean },
   ): Promise<void> {
-    const target = enclosingCallable(await documentCallables(uri), position);
+    let target: Callable | undefined;
+    // The symbol list gives nicer names (it knows the enclosing class), so use it when it agrees.
+    // Skip it for files outside the workspace: library typings can hold thousands of symbols.
+    if (!opts.callable || vscode.workspace.getWorkspaceFolder(uri)) {
+      try {
+        target = enclosingCallable(await documentCallables(uri), position);
+      } catch {
+        target = undefined;
+      }
+    }
+    if (opts.callable && !target?.selectionRange.start.isEqual(opts.callable.selectionRange.start)) {
+      target = opts.callable;
+    }
     if (!target) {
       // Outside any function: leave the last flow on screen rather than blanking it.
       return;
     }
     const at = target.selectionRange.start;
     const key = `${uri.toString()}#${at.line}:${at.character}`;
-    if (!opts.force && (key === this.current?.key || key === this.inflightKey)) {
-      return;
+    if (!opts.force) {
+      if (key === this.current?.key || key === this.inflight?.key) {
+        return;
+      }
+      // A click can centre on something the symbol list does not have (a closure, a one-line
+      // arrow function). The cursor then sits inside it, and following the cursor would pull the
+      // centre back out to the enclosing function. Stay on the more specific one.
+      const anchor = this.inflight ?? (this.current && { ...this.current, range: this.current.callable.range });
+      if (
+        opts.fromCursor &&
+        anchor &&
+        anchor.uri.toString() === uri.toString() &&
+        anchor.range.contains(position) &&
+        target.range.contains(anchor.range)
+      ) {
+        return;
+      }
     }
     const seq = ++this.seq;
-    this.inflightKey = key;
+    this.inflight = { key, uri, range: target.range };
     this.flow.post({ type: 'loading', name: target.name });
     try {
       await this.ensureSession();
@@ -602,7 +652,7 @@ class Controller implements vscode.Disposable {
           this.trail.shift();
         }
       }
-      this.current = { key, uri, position: at, name: target.name };
+      this.current = { key, uri, position: at, name: target.name, callable: target };
       this.targets = result.targets;
       this.flow.post({
         type: 'flow',
@@ -612,8 +662,8 @@ class Controller implements vscode.Disposable {
         source: this.session?.label ?? null,
       });
     } finally {
-      if (this.inflightKey === key) {
-        this.inflightKey = undefined;
+      if (this.inflight?.key === key) {
+        this.inflight = undefined;
       }
     }
   }
@@ -625,10 +675,23 @@ class Controller implements vscode.Disposable {
     }
     if (entry) {
       await this.goTo(
-        { uri: entry.uri, reveal: new vscode.Range(entry.position, entry.position), focusAt: entry.position },
+        {
+          uri: entry.uri,
+          reveal: new vscode.Range(entry.position, entry.position),
+          focusAt: entry.position,
+          callable: entry.callable,
+        },
         false,
       );
     }
+  }
+
+  testApi(): TestApi {
+    return {
+      lastPanelMessage: () => this.flow.lastMessage,
+      click: (id) => this.onPanelEvent({ type: 'open', id }),
+      back: () => this.onPanelEvent({ type: 'back' }),
+    };
   }
 
   private async onPanelEvent(e: PanelEvent): Promise<void> {
@@ -657,8 +720,10 @@ class Controller implements vscode.Disposable {
   }
 }
 
-export function activate(context: vscode.ExtensionContext): void {
-  context.subscriptions.push(new Controller(context));
+export function activate(context: vscode.ExtensionContext): { __test: TestApi } {
+  const controller = new Controller(context);
+  context.subscriptions.push(controller);
+  return { __test: controller.testApi() };
 }
 
 export function deactivate(): void {}
