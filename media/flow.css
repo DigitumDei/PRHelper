@@ -260,8 +260,16 @@ path.tip {
   background: var(--c-hover);
 }
 
+/* Code outside this project (libraries, the language's own typings): a dotted outline and a
+   slightly lighter fill, so it reads as "not ours" without fading the text. */
 .card.external {
-  opacity: 0.7;
+  border-style: dotted;
+  border-color: var(--c-plain);
+  background: color-mix(in srgb, var(--c-card) 93%, white 7%);
+}
+
+.card.external.clickable:hover {
+  background: color-mix(in srgb, var(--c-hover) 93%, white 7%);
 }
 
 /* The left stripe says whether this function is itself touched by the PR. */

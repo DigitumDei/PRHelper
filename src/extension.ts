@@ -216,6 +216,11 @@ interface FocusEntry {
 /** Hooks for the end-to-end check, so it can drive the panel the way a click would. */
 export interface TestApi {
   lastPanelMessage(): unknown;
+  sessionLabel(): string | undefined;
+  changedFiles(): string[];
+  /** What the "Changed in this PR" list shows under a file, e.g. `src/api.ts`. */
+  changedFunctions(relPath: string): Promise<string[]>;
+  showLastCommit(): Promise<void>;
   click(id: string): Promise<void>;
   back(): Promise<void>;
 }
@@ -255,6 +260,7 @@ class Controller implements vscode.Disposable {
       vscode.workspace.registerTextDocumentContentProvider(BASE_SCHEME, new BaseContentProvider(() => this.session)),
       cmd('prFlow.loadPullRequest', () => this.guard(() => this.loadPullRequest())),
       cmd('prFlow.compareWithRef', () => this.guard(() => this.compareWithRef())),
+      cmd('prFlow.showCommit', () => this.guard(() => this.showCommit())),
       cmd('prFlow.refresh', () => this.guard(() => this.refresh())),
       cmd('prFlow.selectSource', () => this.guard(() => this.selectSource())),
       cmd('prFlow.showFlowAtCursor', () => this.guard(() => this.showFlowAtCursor())),
@@ -313,8 +319,9 @@ class Controller implements vscode.Disposable {
   }
 
   /**
-   * On first use, load something sensible without being asked: the open pull request for the
-   * branch in this folder if there is one, otherwise a comparison against the default branch.
+   * On first use, load something sensible without being asked. In order: the commit itself when
+   * the folder is on a detached HEAD; the open pull request for the branch; a comparison with the
+   * default branch; and when that comparison is empty, the latest commit.
    */
   private async ensureSession(): Promise<void> {
     if (this.session || this.autoLoadTried) {
@@ -324,6 +331,11 @@ class Controller implements vscode.Disposable {
     try {
       const root = await this.findRoot();
       if (!root) {
+        return;
+      }
+      if ((await git.currentBranch(root)) === 'HEAD') {
+        // Detached: this folder is a checkout of one commit, so show that commit.
+        this.setSession(await PrSession.loadCommit(root));
         return;
       }
       const detect = vscode.workspace.getConfiguration('prFlow').get<boolean>('detectPullRequest', true);
@@ -337,9 +349,10 @@ class Controller implements vscode.Disposable {
         return;
       }
       const base = await git.defaultBase(root);
-      if (base) {
-        this.setSession(await PrSession.load(root, base));
-      }
+      const session = base ? await PrSession.load(root, base) : undefined;
+      // Nothing differs from the default branch: typically sitting on main just after a merge.
+      // An empty list helps nobody, so show what the latest commit brought in instead.
+      this.setSession(session && session.files.length > 0 ? session : await PrSession.loadCommit(root));
     } catch {
       // No base to compare with; the panel still works as plain navigation.
     }
@@ -349,8 +362,10 @@ class Controller implements vscode.Disposable {
     this.session = session;
     const n = session.files.length;
     this.treeView.description = session.label;
-    this.treeView.message = n === 0 ? `No changes against ${session.baseRef}.` : undefined;
-    this.status.text = `$(git-pull-request) ${session.label} · ${n} file${n === 1 ? '' : 's'}`;
+    this.treeView.message =
+      n > 0 ? undefined : session.fixedStart ? 'This commit changes no files.' : `No changes against ${session.baseRef}.`;
+    const icon = session.fixedStart ? 'git-commit' : 'git-pull-request';
+    this.status.text = `$(${icon}) ${session.label} · ${n} file${n === 1 ? '' : 's'}`;
     this.status.tooltip = 'PR Flow: choose what to compare against';
     this.status.show();
     this.tree.refresh();
@@ -410,9 +425,8 @@ class Controller implements vscode.Disposable {
       // The language server reads files on disk, so the PR has to be checked out somewhere to be
       // traced. A worktree of its own leaves this folder's branch and uncommitted work alone.
       const configured = vscode.workspace.getConfiguration('prFlow').get<string>('worktreeDirectory', '.worktrees');
-      const dest = worktreePathFor(trees, configured, pr.headRefName, pr.number, fs.existsSync);
-      const inside = !path.relative(root, dest).startsWith('..');
-      const unignored = inside && !(await git.isIgnored(root, dest));
+      const dest = worktreePathFor(trees, configured, pr.headRefName, `pr-${pr.number}`, fs.existsSync);
+      const unignored = await this.showsAsUntracked(root, dest);
       const newWindow = 'Worktree in New Window';
       const thisWindow = 'Worktree in This Window';
       const inPlace = 'Check Out Here';
@@ -461,6 +475,91 @@ class Controller implements vscode.Disposable {
     await vscode.commands.executeCommand('prFlow.changes.focus');
   }
 
+  /** A worktree folder inside the checkout that git does not ignore would be listed as untracked there. */
+  private async showsAsUntracked(root: string, dest: string): Promise<boolean> {
+    const inside = !path.relative(root, dest).startsWith('..');
+    return inside && !(await git.isIgnored(root, dest));
+  }
+
+  /** Review the commit this folder has checked out: its parent against the working tree. */
+  private async showLastCommit(): Promise<void> {
+    const root = await this.requireRoot();
+    this.setSession(await PrSession.loadCommit(root));
+    await vscode.commands.executeCommand('prFlow.changes.focus');
+  }
+
+  private async showCommit(): Promise<void> {
+    const root = await this.requireRoot();
+    const commits = await git.recentCommits(root, 100);
+    if (commits.length === 0) {
+      void vscode.window.showInformationMessage('PR Flow: this repository has no commits yet.');
+      return;
+    }
+    const picked = await vscode.window.showQuickPick(
+      commits.map((commit, i) => ({
+        label: `${commit.parents.length > 1 ? '$(git-merge)' : '$(git-commit)'} ${commit.subject}`,
+        description: commit.short + (i === 0 ? ' · checked out here' : ''),
+        detail: `${commit.author} · ${commit.when}`,
+        commit,
+      })),
+      { placeHolder: 'Commit to look at', matchOnDescription: true, matchOnDetail: true },
+    );
+    if (!picked) {
+      return;
+    }
+    const { commit } = picked;
+    if (commit.sha === commits[0].sha) {
+      await this.showLastCommit();
+      return;
+    }
+
+    // An older commit. The flow is traced from the files on disk, and those are a later version,
+    // so the commit needs a checkout of its own. A folder on a detached HEAD shows its commit.
+    const here = 'This Window';
+    const fresh = 'New Window';
+    const trees = await git.listWorktrees(root);
+    const existing = trees.find((w) => w.head === commit.sha && !w.branch);
+    if (existing) {
+      const choice = await vscode.window.showInformationMessage(
+        `Commit ${commit.short} is already checked out in a worktree.`,
+        { modal: true, detail: `${existing.path}\n\nOpen that folder to look at it.` },
+        `Open in ${fresh}`,
+        `Open in ${here}`,
+      );
+      if (choice) {
+        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(existing.path), {
+          forceNewWindow: choice.endsWith(fresh),
+        });
+      }
+      return;
+    }
+    const configured = vscode.workspace.getConfiguration('prFlow').get<string>('worktreeDirectory', '.worktrees');
+    const dest = worktreePathFor(trees, configured, `commit-${commit.short}`, commit.short, fs.existsSync);
+    const unignored = await this.showsAsUntracked(root, dest);
+    const choice = await vscode.window.showInformationMessage(
+      `Commit ${commit.short} is not the one checked out in this folder.`,
+      {
+        modal: true,
+        detail:
+          'The flow is traced from the files on disk, so an older commit needs a checkout of its own.\n\n' +
+          `A worktree would be created at:\n${dest}` +
+          (unignored ? '\n\nThat folder is not git-ignored here, so it will show up as untracked in this checkout.' : ''),
+      },
+      `Worktree in ${fresh}`,
+      `Worktree in ${here}`,
+    );
+    if (!choice) {
+      return;
+    }
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: `Creating worktree for commit ${commit.short}` },
+      () => git.addDetachedWorktree(root, dest, commit.sha),
+    );
+    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(dest), {
+      forceNewWindow: choice.endsWith(fresh),
+    });
+  }
+
   private async compareWithRef(): Promise<void> {
     const root = await this.requireRoot();
     const refs = await git.listRefs(root);
@@ -486,6 +585,7 @@ class Controller implements vscode.Disposable {
       [
         { label: '$(git-pull-request) Load pull request…', run: () => this.loadPullRequest() },
         { label: '$(git-compare) Compare with branch or ref…', run: () => this.compareWithRef() },
+        { label: '$(git-commit) Show a commit…', run: () => this.showCommit() },
         { label: '$(refresh) Refresh', run: () => this.refresh() },
       ],
       { placeHolder: this.session ? `Currently: ${this.session.label}` : 'Nothing loaded yet' },
@@ -689,6 +789,14 @@ class Controller implements vscode.Disposable {
   testApi(): TestApi {
     return {
       lastPanelMessage: () => this.flow.lastMessage,
+      sessionLabel: () => this.session?.label,
+      changedFiles: () => (this.session?.files ?? []).map((f) => `${f.status} ${f.newPath ?? f.oldPath}`),
+      changedFunctions: async (relPath) => {
+        const file = this.session?.files.find((f) => f.newPath === relPath);
+        const rows = file ? await this.tree.getChildren({ kind: 'file', file }) : [];
+        return rows.map((r) => (r.kind === 'symbol' ? r.callable.name : r.kind === 'info' ? `(${r.text})` : '?'));
+      },
+      showLastCommit: () => this.showLastCommit(),
       click: (id) => this.onPanelEvent({ type: 'open', id }),
       back: () => this.onPanelEvent({ type: 'back' }),
     };

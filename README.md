@@ -41,8 +41,24 @@ trail at the top retrace your steps.
   - not checked out anywhere: it offers to create a worktree for it and open
     that, or to switch this folder's branch instead.
 - **PR Flow: Compare with Branch or Ref…** compares the working tree with any ref.
+- **PR Flow: Show a Commit…** lists recent commits and shows what one of them
+  changed. See below.
 - With no pull request found, it compares against the default branch
-  (`origin/HEAD`, then `main` or `master`).
+  (`origin/HEAD`, then `main` or `master`). If nothing differs from it, for
+  example on `main` just after a merge, it shows the latest commit instead.
+
+### Looking at one commit
+
+A commit is shown as the difference between its parent and the files on disk. A
+merge commit is compared with its first parent, the branch it was merged into,
+so what you see is everything the merge brought in.
+
+- The commit checked out in this folder (top of the list) is shown in place.
+- An older commit needs a checkout of its own, because the flow is traced from
+  the files on disk and those are a later version. The command offers to create
+  a worktree at that commit and open it.
+- Any folder on a detached HEAD shows its commit when opened, which is how a
+  commit worktree picks up where the command left off.
 
 New worktrees go beside the repository's existing worktrees. If it has none, they
 go in `prFlow.worktreeDirectory` (default `.worktrees` in the main checkout). The

@@ -119,8 +119,26 @@ async function main(report: Record<string, unknown>): Promise<void> {
   await vscode.commands.executeCommand('prFlow.showFlowAtCursor');
   report.commands = 'ran';
 
-  // The click path, driven the way the panel drives it: every click must re-centre the flow.
   const api = (ext.exports as { __test: TestApi }).__test;
+
+  // Methods are nested symbols (children of their class). They must be found: listed under the
+  // file, usable as the centre from the cursor, and named with their class.
+  const apiFile = vscode.Uri.file(path.join(root, 'src', 'api.ts'));
+  report.changedFunctions = await api.changedFunctions('src/api.ts');
+  assert.deepEqual(report.changedFunctions, ['checkoutV2', 'handle', 'reset']);
+  const apiCallables = await documentCallables(apiFile);
+  const handle = apiCallables.find((c) => c.name === 'handle');
+  assert.equal(handle?.container, 'OrderApi');
+  // Line 15 (0-based) is `this.handled++;`, inside OrderApi.handle.
+  assert.equal(enclosingCallable(apiCallables, new vscode.Position(15, 6))?.name, 'handle');
+  const method = await buildFlow(session, apiFile, handle, 40);
+  report.method = { focus: method.vm.focus, callees: method.vm.callees.filter((c) => !c.external).map(brief) };
+  assert.equal(method.vm.focus.name, 'OrderApi.handle');
+  assert.equal(method.vm.focus.change, 'modified');
+  assert.equal(method.vm.callees.find((c) => c.name === 'checkoutV2')?.edge, 'new');
+  assert.equal(method.vm.callees.find((c) => c.name === 'createOrderHandler')?.edge, 'removed');
+
+  // The click path, driven the way the panel drives it: every click must re-centre the flow.
   const panel = () => api.lastPanelMessage() as PanelFlow;
   const focus = () => panel().model?.focus.name;
   const names = (side: 'callers' | 'callees') => panel().model.callers && panel().model[side].map((c) => c.name);
@@ -166,11 +184,27 @@ async function main(report: Record<string, unknown>): Promise<void> {
   await click('callers', 'checkoutV2');
   expectFocus('checkoutV2', 'click caller checkoutV2');
   assert.ok(names('callees').includes('submitOrder'), 'checkoutV2 should list submitOrder as a callee');
+
+  // Looking at a single commit instead of the whole branch.
+  assert.equal(api.sessionLabel(), 'vs main');
+  await api.showLastCommit();
+  report.commit = { label: api.sessionLabel(), files: api.changedFiles() };
+  assert.match(api.sessionLabel() ?? '', /^commit [0-9a-f]{7,} feature: reserve stock/);
+  assert.deepEqual(api.changedFiles(), ['modified src/api.ts', 'added src/inventory.ts', 'modified src/orders.ts']);
+  // The panel redraws against the commit, and the function it was on keeps its marking.
+  const until = Date.now() + 15_000;
+  while (!panel().source?.startsWith('commit ') && Date.now() < until) {
+    await sleep(200);
+  }
+  assert.match(panel().source ?? '', /^commit /);
+  expectFocus('checkoutV2', 'switch to the commit');
+  assert.equal(panel().model.focus.change, 'new');
 }
 
 interface PanelFlow {
   type: string;
-  model: { focus: { name: string }; callers: NodeVM[]; callees: NodeVM[] };
+  source?: string | null;
+  model: { focus: { name: string; change: string }; callers: NodeVM[]; callees: NodeVM[] };
   trail: string[];
 }
 

@@ -83,8 +83,13 @@ export async function documentCallables(uri: vscode.Uri): Promise<Callable[]> {
   const doc = await vscode.workspace.openTextDocument(uri);
   const out: Callable[] = [];
   for (const sym of await rawSymbols(uri)) {
-    if ('location' in sym) {
-      // Flat SymbolInformation: no name range, so find the name on the first line.
+    // VS Code hands back objects that are both shapes at once: every symbol has a `location`,
+    // including the hierarchical ones. So test for the hierarchical fields, not for `location`,
+    // or the children (class methods, functions inside functions) are never visited.
+    if ('selectionRange' in sym && sym.selectionRange) {
+      walk(sym, '', doc, out);
+    } else if ('location' in sym) {
+      // Truly flat SymbolInformation: no name range, so find the name on the first line.
       const range = sym.location.range;
       const strict = classify(sym.kind, sym.name, range, doc);
       if (strict === undefined) {
@@ -101,8 +106,6 @@ export async function documentCallables(uri: vscode.Uri): Promise<Callable[]> {
         selectionRange: new vscode.Range(start, start.translate(0, col >= 0 ? sym.name.length : 0)),
         strict,
       });
-    } else {
-      walk(sym, '', doc, out);
     }
   }
   return out;
