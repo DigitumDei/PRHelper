@@ -1,6 +1,7 @@
 .vscode/**
 .claude/**
 .github/**
+.worktrees/**
 src/**
 dev/**
 out/test/**
