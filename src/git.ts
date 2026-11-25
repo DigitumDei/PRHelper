@@ -66,6 +66,45 @@ export function diffAgainst(root: string, commit: string): Promise<string> {
   return git(root, '-c', 'core.quotepath=off', 'diff', '--no-color', '--no-ext-diff', '-M', '--unified=0', commit, '--');
 }
 
+/** What a commit with no parent is compared against. */
+export const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
+
+export interface Commit {
+  sha: string;
+  short: string;
+  subject: string;
+  author: string;
+  /** Relative date, e.g. "2 hours ago". */
+  when: string;
+  /** More than one for a merge; the first is the branch that was merged into. */
+  parents: string[];
+}
+
+const COMMIT_FORMAT = ['%H', '%h', '%s', '%an', '%ar', '%P'].join('%x1f');
+
+export function parseCommits(out: string): Commit[] {
+  return out
+    .split('\n')
+    .map((line) => line.replace(/\r$/, ''))
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, short, subject, author, when, parents] = line.split('\x1f');
+      return { sha, short, subject, author, when, parents: (parents ?? '').split(' ').filter(Boolean) };
+    });
+}
+
+export async function recentCommits(root: string, count = 100): Promise<Commit[]> {
+  return parseCommits(await git(root, 'log', '-n', String(count), `--format=${COMMIT_FORMAT}`));
+}
+
+export async function commitInfo(root: string, rev: string): Promise<Commit> {
+  const [commit] = parseCommits(await git(root, 'log', '-1', `--format=${COMMIT_FORMAT}`, rev));
+  if (!commit) {
+    throw new CommandError(`No commit found for ${rev}.`);
+  }
+  return commit;
+}
+
 /** New files not yet added to git; `git diff` does not report these. */
 export async function untrackedFiles(root: string): Promise<string[]> {
   const out = await git(root, '-c', 'core.quotepath=off', 'ls-files', '--others', '--exclude-standard');
@@ -124,6 +163,8 @@ export async function pullRequestForCurrentBranch(root: string): Promise<PullReq
 
 export interface Worktree {
   path: string;
+  /** The commit checked out there. */
+  head?: string;
   /** Short branch name; undefined for a detached HEAD. */
   branch?: string;
 }
@@ -136,6 +177,8 @@ export function parseWorktrees(porcelain: string): Worktree[] {
     if (line.startsWith('worktree ')) {
       current = { path: line.slice('worktree '.length) };
       trees.push(current);
+    } else if (current && line.startsWith('HEAD ')) {
+      current.head = line.slice('HEAD '.length);
     } else if (current && line.startsWith('branch ')) {
       current.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '');
     }
@@ -147,9 +190,9 @@ export async function listWorktrees(root: string): Promise<Worktree[]> {
   return parseWorktrees(await git(root, 'worktree', 'list', '--porcelain'));
 }
 
-/** A new worktree at the current commit, on no branch. `gh pr checkout` then runs inside it. */
-export async function addDetachedWorktree(root: string, dir: string): Promise<void> {
-  await git(root, 'worktree', 'add', '--detach', dir);
+/** A new worktree on no branch, at `commit` or at the current commit. */
+export async function addDetachedWorktree(root: string, dir: string, commit?: string): Promise<void> {
+  await git(root, 'worktree', 'add', '--detach', dir, ...(commit ? [commit] : []));
 }
 
 export async function removeWorktree(root: string, dir: string): Promise<void> {

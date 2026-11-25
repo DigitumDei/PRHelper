@@ -166,11 +166,27 @@ async function main(report: Record<string, unknown>): Promise<void> {
   await click('callers', 'checkoutV2');
   expectFocus('checkoutV2', 'click caller checkoutV2');
   assert.ok(names('callees').includes('submitOrder'), 'checkoutV2 should list submitOrder as a callee');
+
+  // Looking at a single commit instead of the whole branch.
+  assert.equal(api.sessionLabel(), 'vs main');
+  await api.showLastCommit();
+  report.commit = { label: api.sessionLabel(), files: api.changedFiles() };
+  assert.match(api.sessionLabel() ?? '', /^commit [0-9a-f]{7,} feature: reserve stock/);
+  assert.deepEqual(api.changedFiles(), ['modified src/api.ts', 'added src/inventory.ts', 'modified src/orders.ts']);
+  // The panel redraws against the commit, and the function it was on keeps its marking.
+  const until = Date.now() + 15_000;
+  while (!panel().source?.startsWith('commit ') && Date.now() < until) {
+    await sleep(200);
+  }
+  assert.match(panel().source ?? '', /^commit /);
+  expectFocus('checkoutV2', 'switch to the commit');
+  assert.equal(panel().model.focus.change, 'new');
 }
 
 interface PanelFlow {
   type: string;
-  model: { focus: { name: string }; callers: NodeVM[]; callees: NodeVM[] };
+  source?: string | null;
+  model: { focus: { name: string; change: string }; callers: NodeVM[]; callees: NodeVM[] };
   trail: string[];
 }
 

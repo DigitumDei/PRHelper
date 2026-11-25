@@ -2,19 +2,22 @@ import * as path from 'path';
 import { Worktree } from './git';
 
 /**
- * Decide where a new worktree for a pull request should go.
+ * Decide where a new worktree should go.
  *
  * Follows what the repo already does: if it has other worktrees, the new one goes beside
  * most of them. Otherwise it goes in `configured` (relative to the main checkout).
- * The folder is named after the last segment of the PR's branch.
+ * The folder is named after the last segment of `name` (a branch such as `feat/login`, or a
+ * plain name such as `commit-1a2b3c4`).
  *
  * @param worktrees output of `git worktree list`; the first entry is the main checkout
+ * @param fallback used as the folder name when `name` has no usable characters, and added to
+ *   the name when that folder already exists (for example `pr-234`)
  */
 export function worktreePathFor(
   worktrees: Worktree[],
   configured: string,
-  headRefName: string,
-  prNumber: number,
+  name: string,
+  fallback: string,
   exists: (p: string) => boolean,
 ): string {
   if (worktrees.length === 0) {
@@ -36,12 +39,12 @@ export function worktreePathFor(
     }
   }
 
-  const leaf = headRefName.split('/').filter(Boolean).pop() ?? '';
-  const name = leaf.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || `pr-${prNumber}`;
-  for (const candidate of [path.join(parent, name), path.join(parent, `${name}-pr${prNumber}`)]) {
+  const leaf = name.split('/').filter(Boolean).pop() ?? '';
+  const folder = leaf.replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || fallback;
+  for (const candidate of [path.join(parent, folder), path.join(parent, `${folder}-${fallback}`)]) {
     if (!exists(candidate)) {
       return candidate;
     }
   }
-  throw new Error(`Both ${path.join(parent, name)} and its "-pr${prNumber}" variant already exist.`);
+  throw new Error(`Both ${path.join(parent, folder)} and its "-${fallback}" variant already exist.`);
 }
